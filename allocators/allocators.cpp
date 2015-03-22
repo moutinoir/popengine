@@ -18,6 +18,18 @@ struct secret_header
 	int magic_value;
 };
 
+void writeHeader (char* headerAddress, int size)
+{
+	header* typedHeader = (header*) headerAddress;
+	typedHeader->size = size;
+}
+
+void readHeader (char* headerAddress)
+{
+	header* typedHeader = (header*) headerAddress;
+	cout << typedHeader->size;
+}
+
 void displayMemory ()
 {
 	for(int i = 0; i < memory_size; ++i)
@@ -25,6 +37,32 @@ void displayMemory ()
 		cout << *(blocks + i);
 	}
 	cout << endl;
+}
+
+char* displayPopoPointer (char* popoPointerAddress)
+{
+	readHeader(popoPointerAddress);
+	header* typedHeader = (header*) popoPointerAddress;
+
+	char* secretHeaderAddress = popoPointerAddress + sizeof(header);
+
+	for(int i = 0; i < (int) sizeof(header); ++i)
+	{
+		cout << *(secretHeaderAddress + i);
+	}
+
+	//secret_header* typedSecretHeader = (secret_header*) secretHeaderAddress;
+
+	char* dataAddress = secretHeaderAddress + sizeof(secret_header);
+
+	int i = 0;
+	for(; i < typedHeader->size; ++i)
+	{
+		cout << *(dataAddress + i);
+	}
+	cout << endl;
+
+	return dataAddress + i;
 }
 
 char* allocate (int requested_size)
@@ -35,10 +73,11 @@ char* allocate (int requested_size)
 	// find header and write h in it
 	char* allocated_header = free_blocks;
 	current_pointer = allocated_header;
-	for(; current_pointer != allocated_header + sizeof(header); ++current_pointer)
+	writeHeader(allocated_header, requested_size);
+	/*for(; current_pointer != allocated_header + sizeof(header); ++current_pointer)
 	{
 		*current_pointer = 'h';
-	}
+	}*/
 
 	char* allocated_secret_header = free_blocks + sizeof(header);
 	current_pointer = allocated_secret_header;
