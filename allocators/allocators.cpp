@@ -6,6 +6,16 @@ using namespace std;
 
 char* blocks = NULL;
 char* free_blocks = NULL;
+
+struct block
+{
+	char* data;
+	block* next = NULL;
+};
+
+block* free_blocks_ = NULL;
+block* used_blocks_ = NULL;
+
 int memory_size = 0;
 
 struct header
@@ -31,6 +41,15 @@ void readHeader (char* headerAddress)
 }
 
 void displayMemory ()
+{
+	for(int i = 0; i < memory_size; ++i)
+	{
+		cout << *(blocks + i);
+	}
+	cout << endl;
+}
+
+void displayPopoMemory ()
 {
 	for(int i = 0; i < memory_size; ++i)
 	{
