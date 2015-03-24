@@ -37,12 +37,12 @@ void readData (char* dataAddress, int size)
 
 void readUsedMemory ()
 {
-	cout << "Used Memory" << endl;
+	cout << "PopEngine Info: Used Memory" << endl;
 	header* memory_unit = used_memory;
 
 	while(memory_unit != NULL)
 	{
-		cout << "    " << memory_unit->size << " " << memory_unit->magic_allocator_id << " ";
+		cout << "        " << memory_unit->size << " " << memory_unit->magic_allocator_id << " ";
 		readData((char*) memory_unit + sizeof(header), memory_unit->size);
 		cout << endl;
 
@@ -56,7 +56,7 @@ char* basicAllocate (int requested_size)
 
 	if(free_memory == NULL || free_memory->size < size)
 	{
-		cerr << "PopEngine Error: not enough free memory as one block" << endl;
+		cerr << "PopEngine Error: not enough free memory as one block to allocate " << requested_size << endl;
 		return NULL;
 	}
 
@@ -87,6 +87,7 @@ char* basicAllocate (int requested_size)
 		previous_used_memory->next = allocated_memory;
 	}
 
+	cerr << "PopEngine Info: allocated " << requested_size << endl;
 	return (char*) allocated_memory + sizeof(header);
 }
 
@@ -110,13 +111,16 @@ int main( int argc, char *argv[] )
 	char* new_memory = NULL;
 
 	new_memory = basicAllocate(6);
-	writeData(new_memory, 6, 'a');
+	if(new_memory != NULL)
+		writeData(new_memory, 6, 'a');
 
 	new_memory = basicAllocate(2);
-	writeData(new_memory, 2, 'b');
+	if(new_memory != NULL)
+		writeData(new_memory, 2, 'b');
 
-	new_memory = basicAllocate(10);
-	writeData(new_memory, 10, 'c');
+	new_memory = basicAllocate(120);
+	if(new_memory != NULL)
+		writeData(new_memory, 120, 'c');
 
 	readUsedMemory();
 
