@@ -42,8 +42,8 @@ void readMemoryList (header* memory_list, string memory_list_name)
 
 	while(memory_unit != NULL)
 	{
-		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << memory_unit + sizeof(header) << " ";
-		readData((char*) memory_unit + sizeof(header), memory_unit->size);
+		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(header)) << " ";
+		readData(((char*) memory_unit) + sizeof(header), memory_unit->size);
 		cout << endl;
 
 		memory_unit = memory_unit->next;
@@ -61,7 +61,7 @@ char* basicAllocate (int requested_size)
 	}
 
 	header* allocated_memory = free_memory;
-	header* new_free_memory = (header*) free_memory + size;
+	header* new_free_memory = free_memory + size;
 
 	new_free_memory->size = free_memory->size - size;
 	new_free_memory->magic_allocator_id = 0;
@@ -83,7 +83,7 @@ char* basicAllocate (int requested_size)
 		used_memory = allocated_memory;
 	}
 
-	char* user_pointer = (char*) allocated_memory + sizeof(header);
+	char* user_pointer = ((char*) allocated_memory) + sizeof(header);
 	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << (void*) user_pointer << endl;
 	return user_pointer;
 }
