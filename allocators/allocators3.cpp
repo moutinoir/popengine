@@ -35,14 +35,14 @@ void readData (char* dataAddress, int size)
 	cout << " ";
 }
 
-void readUsedMemory ()
+void readMemoryList (header* memory_list, string memory_list_name)
 {
-	cout << "PopEngine Info: Used Memory" << endl;
-	header* memory_unit = used_memory;
+	cout << "PopEngine Info: " << memory_list_name << endl;
+	header* memory_unit = memory_list;
 
 	while(memory_unit != NULL)
 	{
-		cout << "        " << memory_unit->size << " " << memory_unit->magic_allocator_id << " ";
+		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " ";
 		readData((char*) memory_unit + sizeof(header), memory_unit->size);
 		cout << endl;
 
@@ -79,27 +79,73 @@ char* basicAllocate (int requested_size)
 	}
 	else
 	{
-		header* previous_used_memory = used_memory;
-		while(previous_used_memory->next != NULL)
-		{
-			previous_used_memory = previous_used_memory->next;
-		}
-		previous_used_memory->next = allocated_memory;
+		allocated_memory->next = used_memory;
+		used_memory = allocated_memory;
 	}
 
-	cerr << "PopEngine Info: allocated " << requested_size << endl;
-	return (char*) allocated_memory + sizeof(header);
+	char* user_pointer = (char*) allocated_memory + sizeof(header);
+	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << user_pointer << endl;
+	return user_pointer;
+}
+
+void basicFree (char* user_pointer)
+{
+	header* typed_header = (header*) user_pointer - sizeof(header);
+
+	// check the magic number and the allocator id at the same time
+	if(typed_header->magic_allocator_id != basicAllocatorMagicValue)
+	{
+		cerr << "PopEngine Error: invalid pointer at address " << typed_header << " magic_allocator_id is " << typed_header->magic_allocator_id << " size is " << typed_header->size << endl;
+		return; 
+	}
+	typed_header->magic_allocator_id = 0;
+
+	// look for previous header in used memory
+	if(typed_header != used_memory)
+	{
+		header* previous_header = used_memory;
+		while(previous_header->next != typed_header && previous_header->next != NULL)
+		{
+			previous_header = previous_header->next;
+		}
+
+		if(previous_header->next == NULL)
+		{
+			cerr << "PopEngine Error: pointer wasn't in used memory " << &user_pointer << endl;
+			return; 
+		}
+
+		// vanish the header from used memory
+		if(previous_header->next == typed_header)
+		{
+			previous_header->next = typed_header->next;
+		}
+	}
+	else
+	{
+		// vanish the header from used memory
+		used_memory = typed_header->next;
+	}
+	typed_header->next = NULL;
+
+	// add the pointer to free memory
+	cout << "PopEngine Info: freed pointer of size" << typed_header->size << endl;
+	typed_header->next = free_memory;
+	free_memory = typed_header;
 }
 
 int main( int argc, char *argv[] )
 {
 	memory_size = 128 * sizeof(char);
+
 	if(memory_size < sizeof(header))
 	{
 		cerr << "PopEngine Error: not enough memory to create a header" << endl;
 		return 1;
 	}
 
+	cout << "PopEngine Info: memory size " << memory_size << endl;
+	cout << "PopEngine Info: header size " << sizeof(header) << endl;
 	memory = (char*) malloc(memory_size);
 
 	// initialize free_memory
@@ -108,21 +154,23 @@ int main( int argc, char *argv[] )
 	free_memory->magic_allocator_id = 0;
 	free_memory->next = NULL;
 
-	char* new_memory = NULL;
+	char* memory_a = basicAllocate(6);
+	if(memory_a != NULL)
+		writeData(memory_a, 6, 'a');
 
-	new_memory = basicAllocate(6);
-	if(new_memory != NULL)
-		writeData(new_memory, 6, 'a');
+	char* memory_b = basicAllocate(2);
+	if(memory_b != NULL)
+		writeData(memory_b, 2, 'b');
 
-	new_memory = basicAllocate(2);
-	if(new_memory != NULL)
-		writeData(new_memory, 2, 'b');
+	char* memory_c = basicAllocate(120);
+	if(memory_c != NULL)
+		writeData(memory_c, 120, 'c');
 
-	new_memory = basicAllocate(120);
-	if(new_memory != NULL)
-		writeData(new_memory, 120, 'c');
+	if(memory_b != NULL)
+		basicFree(memory_b);
 
-	readUsedMemory();
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
 
 	free(memory);	
 	return 0;
