@@ -42,7 +42,7 @@ void readMemoryList (header* memory_list, string memory_list_name)
 
 	while(memory_unit != NULL)
 	{
-		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " ";
+		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << memory_unit + sizeof(header) << " ";
 		readData((char*) memory_unit + sizeof(header), memory_unit->size);
 		cout << endl;
 
@@ -84,18 +84,18 @@ char* basicAllocate (int requested_size)
 	}
 
 	char* user_pointer = (char*) allocated_memory + sizeof(header);
-	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << user_pointer << endl;
+	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << (void*) user_pointer << endl;
 	return user_pointer;
 }
 
 void basicFree (char* user_pointer)
 {
-	header* typed_header = (header*) user_pointer - sizeof(header);
+	header* typed_header = (header*) (user_pointer - sizeof(header));
 
 	// check the magic number and the allocator id at the same time
 	if(typed_header->magic_allocator_id != basicAllocatorMagicValue)
 	{
-		cerr << "PopEngine Error: invalid pointer at address " << typed_header << " magic_allocator_id is " << typed_header->magic_allocator_id << " size is " << typed_header->size << endl;
+		cerr << "PopEngine Error: invalid header at address " << typed_header << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << typed_header->magic_allocator_id << " size is " << typed_header->size << endl;
 		return; 
 	}
 	typed_header->magic_allocator_id = 0;
@@ -129,7 +129,7 @@ void basicFree (char* user_pointer)
 	typed_header->next = NULL;
 
 	// add the pointer to free memory
-	cout << "PopEngine Info: freed pointer of size" << typed_header->size << endl;
+	cout << "PopEngine Info: freed pointer of size " << typed_header->size << " " << (void*) user_pointer << endl;
 	typed_header->next = free_memory;
 	free_memory = typed_header;
 }
@@ -167,7 +167,16 @@ int main( int argc, char *argv[] )
 		writeData(memory_c, 120, 'c');
 
 	if(memory_b != NULL)
+	{
 		basicFree(memory_b);
+		memory_b = NULL;
+	}
+
+	if(memory_a != NULL)
+	{
+		basicFree(memory_a);
+		memory_a = NULL;
+	}
 
 	readMemoryList(used_memory, "Used Memory");
 	readMemoryList(free_memory, "Free Memory");
