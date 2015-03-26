@@ -42,7 +42,7 @@ void readMemoryList (header* memory_list, string memory_list_name)
 
 	while(memory_unit != NULL)
 	{
-		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(header)) << " ";
+		cout << "                " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(header)) << " ";
 		readData(((char*) memory_unit) + sizeof(header), memory_unit->size);
 		cout << endl;
 
@@ -54,21 +54,56 @@ char* basicAllocate (int requested_size)
 {
 	int size = requested_size + sizeof(header);
 
-	if(free_memory == NULL || free_memory->size < size)
+	if(free_memory == NULL)
+	{
+		cerr << "PopEngine Error: no free memory " << endl;
+		return NULL;
+	}
+
+	header* previous_potential_memory = NULL;
+	header* potential_memory = free_memory;
+
+	while(potential_memory != NULL && potential_memory->size < size)
+	{
+		previous_potential_memory = potential_memory;
+		potential_memory = potential_memory->next;
+	}
+
+	if(potential_memory == NULL)
 	{
 		cerr << "PopEngine Error: not enough free memory as one block to allocate " << requested_size << endl;
 		return NULL;
 	}
 
-	header* allocated_memory = free_memory;
-	header* new_free_memory = free_memory + size;
+	if(potential_memory->size < size)
+	{
+		// never supposed to reach this code but just in case
+		cerr << "PopEngine Error: not enough free memory as one block to allocate, this code shouldn't be reached " << requested_size << endl;
+		return NULL;
+	}
 
-	new_free_memory->size = free_memory->size - size;
-	new_free_memory->magic_allocator_id = 0;
-	new_free_memory->next = free_memory->next;
+	// we found a block with enough memory
+	// get allocated header
+	header* allocated_memory = potential_memory;
+	// find remaining free memory new header address
+	header* remaining_free_memory = allocated_memory + size;
 
-	free_memory = new_free_memory;
+	// change remaining free memory header information
+	remaining_free_memory->size = allocated_memory->size - size;
+	remaining_free_memory->magic_allocator_id = 0;
+	remaining_free_memory->next = allocated_memory->next;
 
+	// update previous potential memory next pointer
+	if(previous_potential_memory != NULL)
+	{
+		previous_potential_memory->next = remaining_free_memory;
+	}
+	else
+	{
+		free_memory = remaining_free_memory;
+	}
+	
+	// set allocated memory information
 	allocated_memory->size = requested_size;
 	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
 	allocated_memory->next = NULL;
@@ -136,7 +171,7 @@ void basicFree (char* user_pointer)
 
 int main( int argc, char *argv[] )
 {
-	memory_size = 128 * sizeof(char);
+	memory_size = 256 * sizeof(char);
 
 	if(memory_size < (int) sizeof(header))
 	{
@@ -162,21 +197,55 @@ int main( int argc, char *argv[] )
 	if(memory_b != NULL)
 		writeData(memory_b, 2, 'b');
 
-	char* memory_c = basicAllocate(120);
-	if(memory_c != NULL)
-		writeData(memory_c, 120, 'c');
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
 
-	if(memory_b != NULL)
+	char* memory_c = basicAllocate(190);
+	if(memory_c != NULL)
+		writeData(memory_c, 190, 'c');
+
+	char* memory_d = basicAllocate(40);
+	if(memory_d != NULL)
+		writeData(memory_d, 40, 'd');
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	if(memory_d != NULL)
 	{
-		basicFree(memory_b);
-		memory_b = NULL;
+		basicFree(memory_d);
+		memory_d = NULL;
 	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	char* memory_e = basicAllocate(12);
+	if(memory_e != NULL)
+		writeData(memory_e, 12, 'e');
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	char* memory_f = basicAllocate(3);
+	if(memory_f != NULL)
+		writeData(memory_f, 3, 'f');
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
 
 	if(memory_a != NULL)
 	{
 		basicFree(memory_a);
 		memory_a = NULL;
 	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	char* memory_g = basicAllocate(109);
+	if(memory_g != NULL)
+		writeData(memory_g, 109, 'g');
 
 	readMemoryList(used_memory, "Used Memory");
 	readMemoryList(free_memory, "Free Memory");
