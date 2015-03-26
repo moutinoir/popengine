@@ -6,13 +6,13 @@ CC = g++
 
 .PHONY: all clean
 
-all: clean allocators3
+all: clean allocators
 
 clean:
-	rm -f allocators3.o
-	rm -f allocators3
+	rm -f allocators.o
+	rm -f allocators
 
-allocators3: allocators3.o
+allocators: allocators.o
 
-allocators3.o: allocators3.cpp
+allocators.o: allocators.cpp
 

@@ -4,148 +4,183 @@
 
 using namespace std;
 
-char* blocks = NULL;
-char* free_blocks = NULL;
-
-struct block
-{
-	char* data;
-	block* next = NULL;
-};
-
-block* free_blocks_ = NULL;
-block* used_blocks_ = NULL;
-
+char* memory = NULL;
 int memory_size = 0;
+int basicAllocatorMagicValue = 6548;
 
 struct header
 {
 	int size;
+	int magic_allocator_id;
+	header* next;
 };
 
-struct secret_header
-{
-	int magic_value;
-};
+header* free_memory = NULL;
+header* used_memory = NULL;
 
-void writeHeader (char* headerAddress, int size)
+void writeData (char* dataAddress, int size, char data)
 {
-	header* typedHeader = (header*) headerAddress;
-	typedHeader->size = size;
-}
-
-void readHeader (char* headerAddress)
-{
-	header* typedHeader = (header*) headerAddress;
-	cout << typedHeader->size;
-}
-
-void displayMemory ()
-{
-	for(int i = 0; i < memory_size; ++i)
+	for(int i = 0; i < size; ++i)
 	{
-		cout << *(blocks + i);
+		*(dataAddress + i) = data;
 	}
-	cout << endl;
 }
 
-void displayPopoMemory ()
+void readData (char* dataAddress, int size)
 {
-	for(int i = 0; i < memory_size; ++i)
-	{
-		cout << *(blocks + i);
-	}
-	cout << endl;
-}
-
-char* displayPopoPointer (char* popoPointerAddress)
-{
-	readHeader(popoPointerAddress);
-	header* typedHeader = (header*) popoPointerAddress;
-
-	char* secretHeaderAddress = popoPointerAddress + sizeof(header);
-
-	for(int i = 0; i < (int) sizeof(header); ++i)
-	{
-		cout << *(secretHeaderAddress + i);
-	}
-
-	//secret_header* typedSecretHeader = (secret_header*) secretHeaderAddress;
-
-	char* dataAddress = secretHeaderAddress + sizeof(secret_header);
-
-	int i = 0;
-	for(; i < typedHeader->size; ++i)
+	for(int i = 0; i < size; ++i)
 	{
 		cout << *(dataAddress + i);
 	}
-	cout << endl;
-
-	return dataAddress + i;
+	cout << " ";
 }
 
-char* allocate (int requested_size)
+void readMemoryList (header* memory_list, string memory_list_name)
 {
-	int allocated_size = requested_size + sizeof(header) + sizeof(secret_header);
-	char* current_pointer = NULL;
+	cout << "PopEngine Info: " << memory_list_name << endl;
+	header* memory_unit = memory_list;
 
-	// find header and write h in it
-	char* allocated_header = free_blocks;
-	current_pointer = allocated_header;
-	writeHeader(allocated_header, requested_size);
-	/*for(; current_pointer != allocated_header + sizeof(header); ++current_pointer)
+	while(memory_unit != NULL)
 	{
-		*current_pointer = 'h';
-	}*/
+		cout << "        " << memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(header)) << " ";
+		readData(((char*) memory_unit) + sizeof(header), memory_unit->size);
+		cout << endl;
 
-	char* allocated_secret_header = free_blocks + sizeof(header);
-	current_pointer = allocated_secret_header;
-	for(; current_pointer != allocated_secret_header + sizeof(secret_header); ++current_pointer)
+		memory_unit = memory_unit->next;
+	}
+}
+
+char* basicAllocate (int requested_size)
+{
+	int size = requested_size + sizeof(header);
+
+	if(free_memory == NULL || free_memory->size < size)
 	{
-		*current_pointer = 's';
+		cerr << "PopEngine Error: not enough free memory as one block to allocate " << requested_size << endl;
+		return NULL;
 	}
 
-	char* pointer = free_blocks + sizeof(header) + sizeof(secret_header);
-	current_pointer = pointer;
-	for(; current_pointer != pointer + requested_size; ++current_pointer)
+	header* allocated_memory = free_memory;
+	header* new_free_memory = free_memory + size;
+
+	new_free_memory->size = free_memory->size - size;
+	new_free_memory->magic_allocator_id = 0;
+	new_free_memory->next = free_memory->next;
+
+	free_memory = new_free_memory;
+
+	allocated_memory->size = requested_size;
+	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
+	allocated_memory->next = NULL;
+
+	if(used_memory == NULL)
 	{
-		*current_pointer = 'm';
+		used_memory = allocated_memory;
+	}
+	else
+	{
+		allocated_memory->next = used_memory;
+		used_memory = allocated_memory;
 	}
 
-	free_blocks = free_blocks + allocated_size;
+	char* user_pointer = ((char*) allocated_memory) + sizeof(header);
+	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << (void*) user_pointer << endl;
+	return user_pointer;
+}
 
-	return pointer;
+void basicFree (char* user_pointer)
+{
+	header* typed_header = (header*) (user_pointer - sizeof(header));
+
+	// check the magic number and the allocator id at the same time
+	if(typed_header->magic_allocator_id != basicAllocatorMagicValue)
+	{
+		cerr << "PopEngine Error: invalid header at address " << typed_header << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << typed_header->magic_allocator_id << " size is " << typed_header->size << endl;
+		return; 
+	}
+	typed_header->magic_allocator_id = 0;
+
+	// look for previous header in used memory
+	if(typed_header != used_memory)
+	{
+		header* previous_header = used_memory;
+		while(previous_header->next != typed_header && previous_header->next != NULL)
+		{
+			previous_header = previous_header->next;
+		}
+
+		if(previous_header->next == NULL)
+		{
+			cerr << "PopEngine Error: pointer wasn't in used memory " << &user_pointer << endl;
+			return; 
+		}
+
+		// vanish the header from used memory
+		if(previous_header->next == typed_header)
+		{
+			previous_header->next = typed_header->next;
+		}
+	}
+	else
+	{
+		// vanish the header from used memory
+		used_memory = typed_header->next;
+	}
+	typed_header->next = NULL;
+
+	// add the pointer to free memory
+	cout << "PopEngine Info: freed pointer of size " << typed_header->size << " " << (void*) user_pointer << endl;
+	typed_header->next = free_memory;
+	free_memory = typed_header;
 }
 
 int main( int argc, char *argv[] )
 {
-	memory_size = 32 * sizeof(char);
-	blocks = (char*) malloc(memory_size);
-	free_blocks = blocks;
+	memory_size = 128 * sizeof(char);
 
-	for(int i = 0; i < memory_size; ++i)
+	if(memory_size < (int) sizeof(header))
 	{
-		*(blocks + i) = 'f';
+		cerr << "PopEngine Error: not enough memory to create a header" << endl;
+		return 1;
 	}
-	displayMemory();
-	allocate(2);
-	allocate(6);
 
-	/*bool quit = false;
-	string answer = "";
-	while(!quit)
+	cout << "PopEngine Info: memory size " << memory_size << endl;
+	cout << "PopEngine Info: header size " << sizeof(header) << endl;
+	memory = (char*) malloc(memory_size);
+
+	// initialize free_memory
+	free_memory = (header*) memory;
+	free_memory->size = memory_size - sizeof(header);
+	free_memory->magic_allocator_id = 0;
+	free_memory->next = NULL;
+
+	char* memory_a = basicAllocate(6);
+	if(memory_a != NULL)
+		writeData(memory_a, 6, 'a');
+
+	char* memory_b = basicAllocate(2);
+	if(memory_b != NULL)
+		writeData(memory_b, 2, 'b');
+
+	char* memory_c = basicAllocate(120);
+	if(memory_c != NULL)
+		writeData(memory_c, 120, 'c');
+
+	if(memory_b != NULL)
 	{
-	    cout << "\n What is your full name? \t";
-	    cin >> answer;
-	    cout << "\n What is your current salary? \t";
-	    cin >> answer;
-	    cout << "\n What is your pay increase? \t";
-	    cin >> answer;
-	    cout << "\n your answer is : \t" + answer << endl;
-	    quit = true;
-	}*/
-	displayMemory ();
-	free(blocks);
-	//std::cout << "Hello World" << std::endl;	
+		basicFree(memory_b);
+		memory_b = NULL;
+	}
+
+	if(memory_a != NULL)
+	{
+		basicFree(memory_a);
+		memory_a = NULL;
+	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	free(memory);	
 	return 0;
 }
