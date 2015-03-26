@@ -86,7 +86,7 @@ char* basicAllocate (int requested_size)
 	// get allocated header
 	header* allocated_memory = potential_memory;
 	// find remaining free memory new header address
-	header* remaining_free_memory = allocated_memory + size;
+	header* remaining_free_memory = (header*)((char*) allocated_memory + size);
 
 	// change remaining free memory header information
 	remaining_free_memory->size = allocated_memory->size - size;
@@ -125,21 +125,21 @@ char* basicAllocate (int requested_size)
 
 void basicFree (char* user_pointer)
 {
-	header* typed_header = (header*) (user_pointer - sizeof(header));
+	header* header_to_free = (header*) (user_pointer - sizeof(header));
 
 	// check the magic number and the allocator id at the same time
-	if(typed_header->magic_allocator_id != basicAllocatorMagicValue)
+	if(header_to_free->magic_allocator_id != basicAllocatorMagicValue)
 	{
-		cerr << "PopEngine Error: invalid header at address " << typed_header << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << typed_header->magic_allocator_id << " size is " << typed_header->size << endl;
+		cerr << "PopEngine Error: invalid header at address " << header_to_free << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << header_to_free->magic_allocator_id << " size is " << header_to_free->size << endl;
 		return; 
 	}
-	typed_header->magic_allocator_id = 0;
+	header_to_free->magic_allocator_id = 0;
 
 	// look for previous header in used memory
-	if(typed_header != used_memory)
+	if(header_to_free != used_memory)
 	{
 		header* previous_header = used_memory;
-		while(previous_header->next != typed_header && previous_header->next != NULL)
+		while(previous_header->next != header_to_free && previous_header->next != NULL)
 		{
 			previous_header = previous_header->next;
 		}
@@ -151,22 +151,117 @@ void basicFree (char* user_pointer)
 		}
 
 		// vanish the header from used memory
-		if(previous_header->next == typed_header)
+		if(previous_header->next == header_to_free)
 		{
-			previous_header->next = typed_header->next;
+			previous_header->next = header_to_free->next;
 		}
 	}
 	else
 	{
 		// vanish the header from used memory
-		used_memory = typed_header->next;
+		used_memory = header_to_free->next;
 	}
-	typed_header->next = NULL;
+	header_to_free->next = NULL;
 
 	// add the pointer to free memory
-	cout << "PopEngine Info: freed pointer of size " << typed_header->size << " " << (void*) user_pointer << endl;
-	typed_header->next = free_memory;
-	free_memory = typed_header;
+	cout << "PopEngine Info: freed pointer of size " << header_to_free->size << " " << (void*) user_pointer << endl;
+
+	// look for merges
+	header* potential_mergeable_free_memory = free_memory;
+
+	// look for a merge after mergeable memory
+	bool is_merged_after_potential_free_memory = false;
+	bool is_merged_before_potential_free_memory = false;
+	while(potential_mergeable_free_memory != NULL && !is_merged_after_potential_free_memory)
+	{
+		//cout << "                Is potential_mergeable_free_memory block following address " << (void*) ((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header)) ;
+		//cout << " header_to_free address " << (void*) header_to_free << " ?" << endl;
+		// potential_mergeable_free_memory block following address is header_to_free address
+		if((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header) == (char*) header_to_free )
+		{
+			// add memory after potential mergeable memory
+			potential_mergeable_free_memory->size += header_to_free->size + sizeof(header);
+			is_merged_after_potential_free_memory = true;
+
+			cout << "PopEngine Info: merge freed header address" << (void*) header_to_free << " after free header address ";
+			cout << (void*) potential_mergeable_free_memory << " which last block address is " << (void*) ((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header) - 1) << endl;
+
+			// try to merge with next free memory block (free memory list has to be ordered)
+			// potential free memory has a next  
+			// and potential free memory next header address is the address just after header to free block
+			if(potential_mergeable_free_memory->next != NULL 
+				&& (char*) potential_mergeable_free_memory->next == (char*) header_to_free + header_to_free->size + sizeof(header))
+			{
+				header* potential_mergeable_free_memory_next_next = potential_mergeable_free_memory->next->next;
+				potential_mergeable_free_memory->size += potential_mergeable_free_memory->next->size + sizeof(header);
+				potential_mergeable_free_memory->next = potential_mergeable_free_memory_next_next;
+				is_merged_before_potential_free_memory = true;
+
+				cout << "PopEngine Info: combo merge freed header address" << (void*) header_to_free << " which last block address is "; 
+				cout << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header) - 1) << " before free header address " << (void*) potential_mergeable_free_memory->next << endl;
+			}
+		}
+
+		potential_mergeable_free_memory = potential_mergeable_free_memory->next;
+	}
+
+	// reset potential_mergeable_free_memory and keep track of previous potential_mergeable_free_memory
+	header* previous_potential_mergeable_free_memory = NULL;
+	potential_mergeable_free_memory = free_memory;
+
+	// look for a merge before mergeable memory
+	while(potential_mergeable_free_memory != NULL && !is_merged_before_potential_free_memory)
+	{
+		//cout << "                Is potential_mergeable_free_memory block address " << (void*) potential_mergeable_free_memory ;
+		//cout << " is header_to_free block following address " << (void*) (((char*) header_to_free) + header_to_free->size + sizeof(header)) << " ?" << endl;
+		// potential free memory header address is the address just after header to free block
+		if((char*) potential_mergeable_free_memory == (char*) header_to_free + header_to_free->size + sizeof(header))
+		{
+			header_to_free->size += potential_mergeable_free_memory->size + sizeof(header);
+			// add memory before the first memory in the free list
+			if(previous_potential_mergeable_free_memory == NULL)
+			{
+				free_memory = header_to_free;
+			}
+			else
+			{
+				previous_potential_mergeable_free_memory->next = header_to_free;
+			}
+			is_merged_before_potential_free_memory = true;
+
+			cout << "PopEngine Info: merge freed header address" << (void*) header_to_free << " which last block address is "; 
+			cout << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header) - 1) << " before free header address " << (void*) potential_mergeable_free_memory << endl;
+		}
+
+		previous_potential_mergeable_free_memory = potential_mergeable_free_memory;
+		potential_mergeable_free_memory = potential_mergeable_free_memory->next;
+	}
+
+	// in case we couldn't merge just add the memory at the top of free memory list
+	// TODO : keep me in the right order!!!!!!
+	if(!is_merged_before_potential_free_memory && !is_merged_after_potential_free_memory)
+	{
+		header* previous_memory_unit = NULL;
+		header* memory_unit = free_memory;
+		while(memory_unit != NULL && memory_unit < header_to_free)
+		{
+			previous_memory_unit = memory_unit;
+			memory_unit = memory_unit->next;
+		}
+
+		if(previous_memory_unit != NULL)
+		{
+			previous_memory_unit->next = header_to_free;
+			header_to_free->next = memory_unit;
+			cout << "PopEngine Info: put freed memory of size " << header_to_free->size << " and address " << (void*) user_pointer << " after " << (void*) previous_memory_unit << endl;
+		}
+		else
+		{
+			header_to_free->next = free_memory;
+			free_memory = header_to_free;
+			cout << "PopEngine Info: put freed memory of size " << header_to_free->size << " and address " << (void*) user_pointer << " on top of the free list" << endl;
+		}
+	}
 }
 
 int main( int argc, char *argv[] )
@@ -190,6 +285,48 @@ int main( int argc, char *argv[] )
 	free_memory->next = NULL;
 
 	char* memory_a = basicAllocate(6);
+	if(memory_a != NULL)
+		writeData(memory_a, 6, 'a');
+
+	char* memory_b = basicAllocate(2);
+	if(memory_b != NULL)
+		writeData(memory_b, 2, 'b');
+
+	char* memory_c = basicAllocate(1);
+	if(memory_c != NULL)
+		writeData(memory_c, 1, 'c');
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	if(memory_c != NULL)
+	{
+		basicFree(memory_c);
+		memory_c = NULL;
+	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	if(memory_a != NULL)
+	{
+		basicFree(memory_a);
+		memory_a = NULL;
+	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	if(memory_b != NULL)
+	{
+		basicFree(memory_b);
+		memory_b = NULL;
+	}
+
+	readMemoryList(used_memory, "Used Memory");
+	readMemoryList(free_memory, "Free Memory");
+
+	/*char* memory_a = basicAllocate(6);
 	if(memory_a != NULL)
 		writeData(memory_a, 6, 'a');
 
@@ -248,7 +385,7 @@ int main( int argc, char *argv[] )
 		writeData(memory_g, 109, 'g');
 
 	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
+	readMemoryList(free_memory, "Free Memory");*/
 
 	free(memory);	
 	return 0;
