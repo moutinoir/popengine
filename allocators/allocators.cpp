@@ -7,12 +7,19 @@ using namespace std;
 char* memory = NULL;
 int memory_size = 0;
 int basicAllocatorMagicValue = 6548;
+int word_size_power_of_2 = 3;
+int word_size = 8;
+int block_size = 8;
 
 struct header
 {
 	int size;
 	int magic_allocator_id;
 	header* next;
+	header* previous;
+	header* global_next;
+	header* global_previous;
+	int padding;
 };
 
 header* free_memory = NULL;
@@ -52,7 +59,16 @@ void readMemoryList (header* memory_list, string memory_list_name)
 
 char* basicAllocate (int requested_size)
 {
-	int size = requested_size + sizeof(header);
+	int allocate_size = requested_size + sizeof(header);
+
+	// check if size is a multiple of the block size
+	/*int remainder = allocate_size % block_size;
+	int quotient = allocate_size / block_size;
+
+	if(remainder != 0)
+	{
+		allocate_size = (quotient + 1) * block_size;
+	}*/
 
 	if(free_memory == NULL)
 	{
@@ -63,7 +79,7 @@ char* basicAllocate (int requested_size)
 	header* previous_potential_memory = NULL;
 	header* potential_memory = free_memory;
 
-	while(potential_memory != NULL && potential_memory->size < size)
+	while(potential_memory != NULL && potential_memory->size < allocate_size)
 	{
 		previous_potential_memory = potential_memory;
 		potential_memory = potential_memory->next;
@@ -75,23 +91,61 @@ char* basicAllocate (int requested_size)
 		return NULL;
 	}
 
-	if(potential_memory->size < size)
+	if(potential_memory->size < allocate_size)
 	{
 		// never supposed to reach this code but just in case
 		cerr << "PopEngine Error: not enough free memory as one block to allocate, this code shouldn't be reached " << requested_size << endl;
 		return NULL;
 	}
 
+	// check if user_pointer will need padding or not
+	int padding = 0;
+	char* user_pointer = ((char*) potential_memory) + sizeof(header);
+
+	// check if user pointer is aligned
+	char* aligned_before_user_pointer = (char*)((uintptr_t)user_pointer & ~(uintptr_t)(word_size - 1));
+
+	if(user_pointer != aligned_before_user_pointer)
+	{
+		char* aligned_after_user_pointer = aligned_before_user_pointer + word_size;
+		padding = (int)((uintptr_t)aligned_after_user_pointer - (uintptr_t)user_pointer);
+
+		cout << "PopEngine Info: user pointer not aligned to word size : " << (void*) (uintptr_t)word_size << " Before : " << (void*) aligned_before_user_pointer; 
+		cout << " Current : " << (void*) user_pointer << " After : " << (void*) aligned_after_user_pointer << " Padding : " << padding << endl;
+	}
+
+	// check if enough memory to include the padding
+	if(potential_memory->size < allocate_size + padding)
+	{
+		// never supposed to reach this code but just in case
+		cerr << "PopEngine Error: not enough free memory as one block to allocate including the padding " << requested_size << endl;
+		return NULL;
+	}
+
 	// we found a block with enough memory
+	// save potential memory data to add the padding
+	int potential_memory_size = potential_memory->size;
+	header* potential_memory_next = potential_memory->next;
+
 	// get allocated header
-	header* allocated_memory = potential_memory;
+	header* allocated_memory = (header*)((char*) potential_memory + padding);
+
+	// set allocated memory information
+	allocated_memory->size = allocate_size - sizeof(header);
+	allocated_memory->padding = padding;
+	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
+	allocated_memory->next = NULL;
+
+	// move user pointer
+	user_pointer = user_pointer + padding;
+	
 	// find remaining free memory new header address
-	header* remaining_free_memory = (header*)((char*) allocated_memory + size);
+	header* remaining_free_memory = (header*)((char*) allocated_memory + allocate_size);
 
 	// change remaining free memory header information
-	remaining_free_memory->size = allocated_memory->size - size;
+	remaining_free_memory->size = potential_memory_size - allocate_size - padding;
 	remaining_free_memory->magic_allocator_id = 0;
-	remaining_free_memory->next = allocated_memory->next;
+	remaining_free_memory->next = potential_memory_next;
 
 	// update previous potential memory next pointer
 	if(previous_potential_memory != NULL)
@@ -103,11 +157,6 @@ char* basicAllocate (int requested_size)
 		free_memory = remaining_free_memory;
 	}
 	
-	// set allocated memory information
-	allocated_memory->size = requested_size;
-	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
-	allocated_memory->next = NULL;
-
 	if(used_memory == NULL)
 	{
 		used_memory = allocated_memory;
@@ -118,13 +167,14 @@ char* basicAllocate (int requested_size)
 		used_memory = allocated_memory;
 	}
 
-	char* user_pointer = ((char*) allocated_memory) + sizeof(header);
-	cout << "PopEngine Info: allocated " << requested_size << " at header address " <<  allocated_memory << " and user_pointer address " << (void*) user_pointer << endl;
+	cout << "PopEngine Info: allocated " << allocate_size << " (wanted: " << requested_size << " + " << sizeof(header) << " = " 
+		<< requested_size + sizeof(header) << ") at header address " <<  allocated_memory << " and user_pointer address " << (void*) user_pointer << endl;
 	return user_pointer;
 }
 
 void basicFree (char* user_pointer)
 {
+	cout << "PopEngine Info: Free user pointer " << (void*) user_pointer << endl;
 	header* header_to_free = (header*) (user_pointer - sizeof(header));
 
 	// check the magic number and the allocator id at the same time
@@ -150,7 +200,7 @@ void basicFree (char* user_pointer)
 			return; 
 		}
 
-		// vanish the header from used memory
+		// remove the header from used memory
 		if(previous_header->next == header_to_free)
 		{
 			previous_header->next = header_to_free->next;
@@ -158,13 +208,13 @@ void basicFree (char* user_pointer)
 	}
 	else
 	{
-		// vanish the header from used memory
+		// remove the header from used memory
 		used_memory = header_to_free->next;
 	}
 	header_to_free->next = NULL;
 
 	// add the pointer to free memory
-	cout << "PopEngine Info: freed pointer of size " << header_to_free->size << " " << (void*) user_pointer << endl;
+	cout << "                Remove header " << (void*) header_to_free << " from the used list. Size " << header_to_free->size << " Padding " << header_to_free->padding << endl;
 
 	// look for merges
 	header* potential_mergeable_free_memory = free_memory;
@@ -177,14 +227,14 @@ void basicFree (char* user_pointer)
 		//cout << "                Is potential_mergeable_free_memory block following address " << (void*) ((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header)) ;
 		//cout << " header_to_free address " << (void*) header_to_free << " ?" << endl;
 		// potential_mergeable_free_memory block following address is header_to_free address
-		if((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header) == (char*) header_to_free )
+		if((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header) == (char*) header_to_free - header_to_free->padding )
 		{
 			// add memory after potential mergeable memory
-			potential_mergeable_free_memory->size += header_to_free->size + sizeof(header);
+			char* potential_mergeable_free_memory_last_block = (char*) potential_mergeable_free_memory + sizeof(header) + potential_mergeable_free_memory->size;
+			potential_mergeable_free_memory->size += header_to_free->size + sizeof(header) + header_to_free->padding;
 			is_merged_after_potential_free_memory = true;
 
-			cout << "PopEngine Info: merge freed header address" << (void*) header_to_free << " after free header address ";
-			cout << (void*) potential_mergeable_free_memory << " which last block address is " << (void*) ((char*) potential_mergeable_free_memory + potential_mergeable_free_memory->size + sizeof(header) - 1) << endl;
+			cout << "                merged header " << (void*) header_to_free << " after header address " << (void*) potential_mergeable_free_memory << " which last block is " << (void*) potential_mergeable_free_memory_last_block; 
 
 			// try to merge with next free memory block (free memory list has to be ordered)
 			// potential free memory has a next  
@@ -197,8 +247,7 @@ void basicFree (char* user_pointer)
 				potential_mergeable_free_memory->next = potential_mergeable_free_memory_next_next;
 				is_merged_before_potential_free_memory = true;
 
-				cout << "PopEngine Info: combo merge freed header address" << (void*) header_to_free << " which last block address is "; 
-				cout << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header) - 1) << " before free header address " << (void*) potential_mergeable_free_memory->next << endl;
+				cout << "PopEngine Info: combo merge freed header address " << (void*) header_to_free << " before free header address " << (void*) potential_mergeable_free_memory->next << endl;
 			}
 		}
 
@@ -218,6 +267,22 @@ void basicFree (char* user_pointer)
 		if((char*) potential_mergeable_free_memory == (char*) header_to_free + header_to_free->size + sizeof(header))
 		{
 			header_to_free->size += potential_mergeable_free_memory->size + sizeof(header);
+			header_to_free->next = potential_mergeable_free_memory->next;
+
+			// move back the header is case there was some padding
+			if(header_to_free->padding > 0)
+			{
+				int header_to_free_size = header_to_free->size;
+				header* header_to_free_next = header_to_free->next;
+				int header_to_free_padding = header_to_free->padding;
+
+				header_to_free = (header*)((char*) header_to_free - header_to_free->padding);
+
+				header_to_free->size = header_to_free_size + header_to_free_padding;
+				header_to_free->next = header_to_free_next;
+				header_to_free->padding = 0;
+			}
+
 			// add memory before the first memory in the free list
 			if(previous_potential_mergeable_free_memory == NULL)
 			{
@@ -229,8 +294,7 @@ void basicFree (char* user_pointer)
 			}
 			is_merged_before_potential_free_memory = true;
 
-			cout << "PopEngine Info: merge freed header address" << (void*) header_to_free << " which last block address is "; 
-			cout << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header) - 1) << " before free header address " << (void*) potential_mergeable_free_memory << endl;
+			cout << "PopEngine Info: merge freed header address " << (void*) header_to_free << " before free header address " << (void*) potential_mergeable_free_memory << endl;
 		}
 
 		previous_potential_mergeable_free_memory = potential_mergeable_free_memory;
@@ -247,6 +311,20 @@ void basicFree (char* user_pointer)
 		{
 			previous_memory_unit = memory_unit;
 			memory_unit = memory_unit->next;
+		}
+
+		// move back the header is case there was some padding
+		if(header_to_free->padding > 0)
+		{
+			int header_to_free_size = header_to_free->size;
+			header* header_to_free_next = header_to_free->next;
+			int header_to_free_padding = header_to_free->padding;
+
+			header_to_free = (header*)((char*) header_to_free - header_to_free->padding);
+
+			header_to_free->size = header_to_free_size + header_to_free_padding;
+			header_to_free->next = header_to_free_next;
+			header_to_free->padding = 0;
 		}
 
 		if(previous_memory_unit != NULL)
