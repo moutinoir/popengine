@@ -241,6 +241,10 @@ void basicFree (char* user_pointer)
 	// look for merges
 	header* mergeable_memory = free_memory;
 
+	// look for a place to put memory
+	/*bool is_merged_after_memory = false;
+	bool is_merged_before_memory = false;*/
+
 	// look for a merge after mergeable memory
 	bool is_merged_after_memory = false;
 	bool is_merged_before_memory = false;
@@ -333,11 +337,11 @@ void basicFree (char* user_pointer)
 	// TODO : keep me in the right order!!!!!!
 	if(!is_merged_before_memory && !is_merged_after_memory)
 	{
-		header* previous_memory_unit = NULL;
+		//header* previous_memory_unit = NULL;
 		header* memory_unit = free_memory;
 		while(memory_unit != NULL && memory_unit < header_to_free)
 		{
-			previous_memory_unit = memory_unit;
+			//previous_memory_unit = memory_unit;
 			memory_unit = memory_unit->next;
 		}
 
@@ -355,15 +359,21 @@ void basicFree (char* user_pointer)
 			header_to_free->padding = 0;
 		}
 
-		if(previous_memory_unit != NULL)
+		if(memory_unit->previous != NULL)
 		{
-			previous_memory_unit->next = header_to_free;
+			cout << "                Put after " << (void*) memory_unit->previous << endl;
+			memory_unit->previous->next = header_to_free;
+			header_to_free->previous = memory_unit->previous;
 			header_to_free->next = memory_unit;
-			cout << "                Put after " << (void*) previous_memory_unit << endl;
+			memory_unit->previous = header_to_free;
 		}
 		else
 		{
 			header_to_free->next = free_memory;
+			if(free_memory != NULL)
+			{
+				header_to_free->next->previous = header_to_free;
+			}
 			cout << "                Put before " << (void*) free_memory << endl;
 			free_memory = header_to_free;
 			
