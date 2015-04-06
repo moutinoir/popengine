@@ -28,15 +28,10 @@ header* used_memory = NULL;
 void writeData (char* dataAddress, char data)
 {
 	header* header_info = (header*)(dataAddress - sizeof(header));
-	int i = 0;
-	for(; i < header_info->size - (word_size - header_info->padding); ++i)
+	
+	for(int i = 0; i < header_info->size; ++i)
 	{
 		*(dataAddress + i) = data;
-	}
-
-	for(; i < header_info->size; ++i)
-	{
-		*(dataAddress + i) = '.';
 	}
 }
 
@@ -150,7 +145,7 @@ char* basicAllocate (int requested_size)
 	cout << "  Header pointer : " << (void*) allocated_memory;
 
 	// set allocated memory information
-	allocated_memory->size = requested_size + word_size - padding;
+	allocated_memory->size = requested_size;
 	allocated_memory->padding = padding;
 	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
 	allocated_memory->next = NULL;
@@ -164,7 +159,7 @@ char* basicAllocate (int requested_size)
 	header* remaining_memory = (header*)((char*) user_pointer + allocated_memory->size);
 
 	// change remaining free memory header information
-	remaining_memory->size = memory_size - allocated_memory->size - padding;
+	remaining_memory->size = memory_size - allocated_memory->size - padding - sizeof(header);
 	remaining_memory->magic_allocator_id = 0;
 	remaining_memory->next = memory_next;
 
