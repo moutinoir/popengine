@@ -186,36 +186,6 @@ void basicFree (char* user_pointer)
 	}
 	header_to_free->magic_allocator_id = 0;
 
-	/*
-	// look for previous header in used memory
-	if(header_to_free != used_memory)
-	{
-		header* previous_header = used_memory;
-		while(previous_header->next != header_to_free && previous_header->next != NULL)
-		{
-			previous_header = previous_header->next;
-		}
-
-		if(previous_header->next == NULL)
-		{
-			cerr << "PopEngine Error: pointer wasn't in used memory " << &user_pointer << endl;
-			return; 
-		}
-
-		// remove the header from used memory
-		if(previous_header->next == header_to_free)
-		{
-			previous_header->next = header_to_free->next;
-		}
-	}
-	else
-	{
-		// remove the header from used memory
-		used_memory = header_to_free->next;
-	}
-	header_to_free->next = NULL;
-	*/
-
 	// remove header from used memory
 	header* previous = header_to_free->previous;
 	header* next = header_to_free->next;
@@ -252,12 +222,6 @@ void basicFree (char* user_pointer)
 		header_to_free->padding = 0;
 		header_to_free->magic_allocator_id = 0;
 	}
-
-	/*if(free_memory == NULL)
-	{
-		free_memory = header_to_free;
-		cout << "                Replaced free memory" << endl; 
-	}*/
 
 	// look for merges
 	header* mergeable_memory = NULL;
@@ -336,19 +300,9 @@ void basicFree (char* user_pointer)
 
 				is_tidied = true;
 			}
-			/*else if(header_to_free < free_memory)
-			{
-				cout << "c21" << endl;
-				header_to_free->next = free_memory;
-				free_memory->previous = header_to_free;
-				cout << "                Put before " << (void*) free_memory << endl;
-				free_memory = header_to_free;
-				is_tidied = true;
-				cout << "c22" << endl;
-			}*/
-
 		}
 
+		// update current and next memory
 		mergeable_memory = mergeable_memory_next;
 		if(mergeable_memory != NULL)
 		{
@@ -359,142 +313,6 @@ void basicFree (char* user_pointer)
 			mergeable_memory_next = NULL;
 		}
 	}
-
-	
-	// look for a merge after mergeable memory
-	/*bool is_merged_after_memory = false;
-	bool is_merged_before_memory = false;
-	while(mergeable_memory != NULL && !is_merged_after_memory)
-	{
-		// mergeable_memory block following address is header_to_free address
-		if((char*) mergeable_memory + mergeable_memory->size + sizeof(header) == (char*) header_to_free - header_to_free->padding )
-		{
-			// add memory after potential mergeable memory
-			char* mergeable_memory_last_block = (char*) mergeable_memory + sizeof(header) + mergeable_memory->size;
-			mergeable_memory->size += header_to_free->size + sizeof(header) + header_to_free->padding;
-			is_merged_after_memory = true;
-
-			cout << "                Merged after Memory : " << (void*) mergeable_memory << " --> " << (void*) mergeable_memory_last_block << " FUSION "; 
-			cout << (void*) ((char*)header_to_free - header_to_free->padding) << " <-- To Free : " << (void*) header_to_free << endl;
-
-			// try to merge with next free memory block (free memory list has to be ordered)
-			// potential free memory has a next  
-			// and potential free memory next header address is the address just after header to free block
-			if(mergeable_memory->next != NULL 
-				&& (char*) mergeable_memory->next == (char*) header_to_free + header_to_free->size + sizeof(header))
-			{
-				header* mergeable_memory_next = mergeable_memory->next;
-				header* mergeable_memory_next_next = mergeable_memory->next->next;
-				mergeable_memory->size += mergeable_memory->next->size + sizeof(header);
-				mergeable_memory->next = mergeable_memory_next_next;
-				is_merged_before_memory = true;
-
-				cout << "                Combo Merge after Header : " << (void*) header_to_free << " --> " << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header)) << " FUSION "; 
-				cout << (void*) mergeable_memory_next << " (Memory) " << endl;
-			//<< (void*) header_to_free << " before free header address " << (void*) mergeable_memory->next << endl;
-			}
-		}
-
-		mergeable_memory = mergeable_memory->next;
-	}
-
-	// reset mergeable_memory and keep track of previous mergeable_memory
-	header* previous_mergeable_memory = NULL;
-	mergeable_memory = free_memory;
-
-	// look for a merge before mergeable memory
-	while(mergeable_memory != NULL && !is_merged_before_memory)
-	{
-		//cout << "                Is mergeable_memory block address " << (void*) mergeable_memory ;
-		//cout << " is header_to_free block following address " << (void*) (((char*) header_to_free) + header_to_free->size + sizeof(header)) << " ?" << endl;
-		// potential free memory header address is the address just after header to free block
-		if((char*) mergeable_memory == (char*) header_to_free + header_to_free->size + sizeof(header))
-		{
-			header* header_to_free_last_block = (header*)((char*) header_to_free + header_to_free->size + sizeof(header));
-
-			header_to_free->size += mergeable_memory->size + sizeof(header);
-			header_to_free->next = mergeable_memory->next;
-
-			// move back the header is case there was some padding
-			if(header_to_free->padding > 0)
-			{
-				int header_to_free_size = header_to_free->size;
-				header* header_to_free_next = header_to_free->next;
-				int header_to_free_padding = header_to_free->padding;
-
-				header_to_free = (header*)((char*) header_to_free - header_to_free->padding);
-
-				header_to_free->size = header_to_free_size + header_to_free_padding;
-				header_to_free->next = header_to_free_next;
-				header_to_free->padding = 0;
-			}
-
-			// add memory before the first memory in the free list
-			if(previous_mergeable_memory == NULL)
-			{
-				free_memory = header_to_free;
-			}
-			else
-			{
-				previous_mergeable_memory->next = header_to_free;
-			}
-			is_merged_before_memory = true;
-
-			//cout << "                Merge freed header address " << (void*) header_to_free << " before free header address " << (void*) mergeable_memory << endl;
-			cout << "                Merge after Header : " << (void*) header_to_free << " --> " << (void*) header_to_free_last_block << " FUSION "; 
-			cout << (void*) mergeable_memory << " (Memory) " << endl;
-		}
-
-		previous_mergeable_memory = mergeable_memory;
-		mergeable_memory = mergeable_memory->next;
-	}
-
-	// in case we couldn't merge just add the memory at the top of free memory list
-	// TODO : keep me in the right order!!!!!!
-	if(!is_merged_before_memory && !is_merged_after_memory)
-	{
-		//header* previous_memory_unit = NULL;
-		header* memory_unit = free_memory;
-		while(memory_unit != NULL && memory_unit < header_to_free)
-		{
-			//previous_memory_unit = memory_unit;
-			memory_unit = memory_unit->next;
-		}
-
-		// move back the header is case there was some padding
-		if(header_to_free->padding > 0)
-		{
-			int header_to_free_size = header_to_free->size;
-			header* header_to_free_next = header_to_free->next;
-			int header_to_free_padding = header_to_free->padding;
-
-			header_to_free = (header*)((char*) header_to_free - header_to_free->padding);
-
-			header_to_free->size = header_to_free_size + header_to_free_padding;
-			header_to_free->next = header_to_free_next;
-			header_to_free->padding = 0;
-		}
-
-		if(memory_unit->previous != NULL)
-		{
-			cout << "                Put after " << (void*) memory_unit->previous << endl;
-			memory_unit->previous->next = header_to_free;
-			header_to_free->previous = memory_unit->previous;
-			header_to_free->next = memory_unit;
-			memory_unit->previous = header_to_free;
-		}
-		else
-		{
-			header_to_free->next = free_memory;
-			if(free_memory != NULL)
-			{
-				header_to_free->next->previous = header_to_free;
-			}
-			cout << "                Put before " << (void*) free_memory << endl;
-			free_memory = header_to_free;
-			
-		}
-	}*/
 }
 
 int main( int argc, char *argv[] )
