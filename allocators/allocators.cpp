@@ -12,8 +12,8 @@ namespace pop
 		long magic_allocator_id;
 		header* next;
 		header* previous;
-		header* global_next;
-		header* global_previous;
+		//header* global_next;
+		//header* global_previous;
 		int padding;
 	};
 
@@ -71,29 +71,29 @@ namespace pop
 	};
 };
 
-void writeData (char* dataAddress, char data)
+void writeData (char* a_data_address, char a_data)
 {
-	pop::header* header_info = (pop::header*)(dataAddress - sizeof(pop::header));
+	pop::header* header_info = (pop::header*)(a_data_address - sizeof(pop::header));
 	
 	for(int i = 0; i < header_info->size; ++i)
 	{
-		*(dataAddress + i) = data;
+		*(a_data_address + i) = a_data;
 	}
 }
 
-void readData (char* dataAddress, int size)
+void readData (char* a_data_address, int a_size)
 {
-	for(int i = 0; i < size; ++i)
+	for(int i = 0; i < a_size; ++i)
 	{
-		cout << *(dataAddress + i);
+		cout << *(a_data_address + i);
 	}
 	cout << " ";
 }
 
-void readMemoryList (pop::header* memory_list, string memory_list_name)
+void readMemoryList (pop::header* a_memory_list, string a_memory_list_name)
 {
-	cout << "PopEngine Info: " << memory_list_name << endl;
-	pop::header* memory_unit = memory_list;
+	cout << "PopEngine Info: " << a_memory_list_name << endl;
+	pop::header* memory_unit = a_memory_list;
 
 	while(memory_unit != NULL)
 	{
@@ -106,20 +106,20 @@ void readMemoryList (pop::header* memory_list, string memory_list_name)
 	}
 }
 
-char* basicAllocate (int requested_size, pop::allocator& a_allocator)
+char* basicAllocate (int a_requested_size, pop::allocator& a_allocator)
 {
-	cout << "PopEngine Info: Allocate  " << requested_size;
+	cout << "PopEngine Info: Allocate  " << a_requested_size;
 	// check if requested_size is a multiple of the block size
-	/*int remainder = requested_size % block_size;
-	int quotient = requested_size / block_size;
+	/*int remainder = a_requested_size % block_size;
+	int quotient = a_requested_size / block_size;
 
 	if(remainder != 0)
 	{
-		requested_size = (quotient + 1) * block_size;
+		a_requested_size = (quotient + 1) * block_size;
 	}*/
 
 	// allocate enough memory for the data, the header, and a margin to align the user pointer
-	int allocate_size = requested_size + sizeof(pop::header) + a_allocator.word_size;
+	int allocate_size = a_requested_size + sizeof(pop::header) + a_allocator.word_size;
 	cout << " (behind the scene : " << allocate_size << ")" << endl;
 
 	if(a_allocator.free_memory == NULL)
@@ -139,14 +139,14 @@ char* basicAllocate (int requested_size, pop::allocator& a_allocator)
 
 	if(memory == NULL)
 	{
-		cerr << "PopEngine Error: not enough free memory as one block to allocate " << requested_size << endl;
+		cerr << "PopEngine Error: not enough free memory as one block to allocate " << a_requested_size << endl;
 		return NULL;
 	}
 
 	if(memory->size < allocate_size)
 	{
 		// never supposed to reach this code but just in case
-		cerr << "PopEngine Error: not enough free memory as one block to allocate, this code shouldn't be reached " << requested_size << endl;
+		cerr << "PopEngine Error: not enough free memory as one block to allocate, this code shouldn't be reached " << a_requested_size << endl;
 		return NULL;
 	}
 
@@ -180,7 +180,7 @@ char* basicAllocate (int requested_size, pop::allocator& a_allocator)
 	cout << "  Header pointer : " << (void*) allocated_memory << endl;
 
 	// set allocated memory information
-	allocated_memory->size = requested_size;
+	allocated_memory->size = a_requested_size;
 	allocated_memory->padding = padding;
 	allocated_memory->magic_allocator_id = a_allocator.magic_value;
 	allocated_memory->next = NULL;
@@ -220,15 +220,15 @@ char* basicAllocate (int requested_size, pop::allocator& a_allocator)
 	return user_pointer;
 }
 
-void basicFree (char* user_pointer, pop::allocator& a_allocator)
+void basicFree (char* a_user_pointer, pop::allocator& a_allocator)
 {
-	cout << "PopEngine Info: Free User Pointer " << (void*) user_pointer << endl;
-	pop::header* header_to_free = (pop::header*) (user_pointer - sizeof(pop::header));
+	cout << "PopEngine Info: Free User Pointer " << (void*) a_user_pointer << endl;
+	pop::header* header_to_free = (pop::header*) (a_user_pointer - sizeof(pop::header));
 
 	// check the magic number and the allocator id at the same time
 	if(header_to_free->magic_allocator_id != a_allocator.magic_value)
 	{
-		cerr << "PopEngine Error: invalid header at address " << header_to_free << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << header_to_free->magic_allocator_id << " size is " << header_to_free->size << endl;
+		cerr << "PopEngine Error: invalid header at address " << header_to_free << " user_pointer " << (void*) a_user_pointer << " magic_allocator_id is " << header_to_free->magic_allocator_id << " size is " << header_to_free->size << endl;
 		return; 
 	}
 	header_to_free->magic_allocator_id = pop::allocator::free_memory_magic_value;
@@ -364,7 +364,7 @@ void basicFree (char* user_pointer, pop::allocator& a_allocator)
 
 int main( int argc, char *argv[] )
 {
-	pop::allocator basic_allocator(256, 0xBA51CA110C, 8);
+	pop::allocator basic_allocator(256, 0xBA51CA110C, 16);
 
 	readMemoryList(basic_allocator.used_memory, "Used Memory");
 	readMemoryList(basic_allocator.free_memory, "Free Memory");
