@@ -4,30 +4,76 @@
 
 using namespace std;
 
-char* memory = NULL;
-int memory_size = 0;
-int basicAllocatorMagicValue = 6548;
-int word_size_power_of_2 = 3;
-int word_size = 8;
-int block_size = 8;
-
-struct header
+namespace pop
 {
-	int size;
-	int magic_allocator_id;
-	header* next;
-	header* previous;
-	header* global_next;
-	header* global_previous;
-	int padding;
-};
+	struct header
+	{
+		int size;
+		long magic_allocator_id;
+		header* next;
+		header* previous;
+		header* global_next;
+		header* global_previous;
+		int padding;
+	};
 
-header* free_memory = NULL;
-header* used_memory = NULL;
+	struct allocator
+	{
+		char* memory;
+		int memory_size;
+		long magic_value;
+		int word_size;
+		//int block_size = 8;
+		header* free_memory;
+		header* used_memory;
+
+		static const long free_memory_magic_value = 0xDEADA110C;
+
+		allocator (int a_memory_size, long a_magic_value, int a_word_size)
+		{
+			memory_size = a_memory_size * sizeof(char);
+			magic_value = a_magic_value;
+			word_size = a_word_size;
+
+			if(memory_size < (int) sizeof(header))
+			{
+				cerr << "PopEngine Error: not enough memory to create a header" << endl;
+				return;
+			}
+
+			cout << "PopEngine Info: memory size " << memory_size << endl;
+			cout << "PopEngine Info: header size " << sizeof(header) << endl;
+
+			memory = (char*) malloc(memory_size);
+			cout << "PopEngine Info: Allocated memory " << endl;
+
+			free_memory = NULL;
+			used_memory = NULL;
+
+			free_memory = (header*) memory;
+			free_memory->size = memory_size - sizeof(header);
+			free_memory->magic_allocator_id = free_memory_magic_value;
+			free_memory->padding = 0;
+			free_memory->next = NULL;
+			free_memory->previous = NULL;
+		};
+
+		allocator ()
+		{
+			allocator (256, 0xBA51CA110C, 8);
+		};
+
+		~allocator ()
+		{
+			free(memory);
+			cout << "PopEngine Info: Deallocated memory properly " << endl;
+		};
+	};
+};
 
 void writeData (char* dataAddress, char data)
 {
-	header* header_info = (header*)(dataAddress - sizeof(header));
+	pop::header* header_info = (pop::header*)(dataAddress - sizeof(pop::header));
 	
 	for(int i = 0; i < header_info->size; ++i)
 	{
@@ -44,22 +90,23 @@ void readData (char* dataAddress, int size)
 	cout << " ";
 }
 
-void readMemoryList (header* memory_list, string memory_list_name)
+void readMemoryList (pop::header* memory_list, string memory_list_name)
 {
 	cout << "PopEngine Info: " << memory_list_name << endl;
-	header* memory_unit = memory_list;
+	pop::header* memory_unit = memory_list;
 
 	while(memory_unit != NULL)
 	{
-		cout << "                     " << (void*) memory_unit << " (" << memory_unit->size + sizeof(header) << ") " << memory_unit->size << " " << memory_unit->padding << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(header)) << " ";
-		readData(((char*) memory_unit) + sizeof(header), memory_unit->size);
+		cout << "                     " << (void*) memory_unit << " (" << memory_unit->size + sizeof(pop::header) << ") " << memory_unit->size << " ";
+		cout << memory_unit->padding << " " << memory_unit->magic_allocator_id << " " << (void*)(((char*) memory_unit) + sizeof(pop::header)) << " ";
+		readData(((char*) memory_unit) + sizeof(pop::header), memory_unit->size);
 		cout << endl;
 
 		memory_unit = memory_unit->next;
 	}
 }
 
-char* basicAllocate (int requested_size)
+char* basicAllocate (int requested_size, pop::allocator& a_allocator)
 {
 	cout << "PopEngine Info: Allocate  " << requested_size;
 	// check if requested_size is a multiple of the block size
@@ -72,17 +119,17 @@ char* basicAllocate (int requested_size)
 	}*/
 
 	// allocate enough memory for the data, the header, and a margin to align the user pointer
-	int allocate_size = requested_size + sizeof(header) + word_size;
+	int allocate_size = requested_size + sizeof(pop::header) + a_allocator.word_size;
 	cout << " (behind the scene : " << allocate_size << ")" << endl;
 
-	if(free_memory == NULL)
+	if(a_allocator.free_memory == NULL)
 	{
 		cerr << "PopEngine Error: no free memory " << endl;
 		return NULL;
 	}
 
 	//header* previous_memory = NULL;
-	header* memory = free_memory;
+	pop::header* memory = a_allocator.free_memory;
 
 	while(memory != NULL && memory->size < allocate_size)
 	{
@@ -107,44 +154,44 @@ char* basicAllocate (int requested_size)
 	cout << "                free memory : " << (void*) memory << " size : " << memory->size << endl;
 
 	// align user pointer
-	char* user_pointer = ((char*) memory) + sizeof(header) + word_size;
-	char* aligned_user_pointer = (char*)((uintptr_t)user_pointer & ~(uintptr_t)(word_size - 1));
+	char* user_pointer = ((char*) memory) + sizeof(pop::header) + a_allocator.word_size;
+	char* aligned_user_pointer = (char*)((uintptr_t)user_pointer & ~(uintptr_t)(a_allocator.word_size - 1));
 	cout << "                user pointer : " << (void*) user_pointer << " aligned pointer : " << (void*) aligned_user_pointer << endl;
 
 	// get padding
 	int difference = (int)((uintptr_t)user_pointer - (uintptr_t)aligned_user_pointer);
 	if(difference == 0)
 	{
-		difference = word_size;
+		difference = a_allocator.word_size;
 	}
-	int padding = word_size - difference;
+	int padding = a_allocator.word_size - difference;
 
-	user_pointer = user_pointer - word_size + padding;
+	user_pointer = user_pointer - a_allocator.word_size + padding;
 
 	cout << "                Padding : " << padding << " User pointer : " << (void*) user_pointer;
 
 	// save memory data to add the padding
 	int memory_size = memory->size;
-	header* memory_next = memory->next;
-	header* memory_previous = memory->previous;
+	pop::header* memory_next = memory->next;
+	pop::header* memory_previous = memory->previous;
 
 	// get allocated header
-	header* allocated_memory = (header*)((char*) user_pointer - sizeof(header));
+	pop::header* allocated_memory = (pop::header*)((char*) user_pointer - sizeof(pop::header));
 	cout << "  Header pointer : " << (void*) allocated_memory << endl;
 
 	// set allocated memory information
 	allocated_memory->size = requested_size;
 	allocated_memory->padding = padding;
-	allocated_memory->magic_allocator_id = basicAllocatorMagicValue;
+	allocated_memory->magic_allocator_id = a_allocator.magic_value;
 	allocated_memory->next = NULL;
 	allocated_memory->previous = NULL;
 	
 	// find remaining free memory new header address
-	header* remaining_memory = (header*)((char*) user_pointer + allocated_memory->size);
+	pop::header* remaining_memory = (pop::header*)((char*) user_pointer + allocated_memory->size);
 
 	// change remaining free memory header information
-	remaining_memory->size = memory_size - allocated_memory->size - padding - sizeof(header);
-	remaining_memory->magic_allocator_id = 0;
+	remaining_memory->size = memory_size - allocated_memory->size - padding - sizeof(pop::header);
+	remaining_memory->magic_allocator_id = pop::allocator::free_memory_magic_value;
 	remaining_memory->next = memory_next;
 	remaining_memory->previous = memory_previous;
 
@@ -155,40 +202,40 @@ char* basicAllocate (int requested_size)
 	}
 	else
 	{
-		free_memory = remaining_memory;
+		a_allocator.free_memory = remaining_memory;
 	}
 	
 	// add allocated header to used memory
-	if(used_memory == NULL)
+	if(a_allocator.used_memory == NULL)
 	{
-		used_memory = allocated_memory;
+		a_allocator.used_memory = allocated_memory;
 	}
 	else
 	{
-		allocated_memory->next = used_memory;
-		used_memory = allocated_memory;
+		allocated_memory->next = a_allocator.used_memory;
+		a_allocator.used_memory = allocated_memory;
 		allocated_memory->next->previous = allocated_memory;
 	}
 
 	return user_pointer;
 }
 
-void basicFree (char* user_pointer)
+void basicFree (char* user_pointer, pop::allocator& a_allocator)
 {
 	cout << "PopEngine Info: Free User Pointer " << (void*) user_pointer << endl;
-	header* header_to_free = (header*) (user_pointer - sizeof(header));
+	pop::header* header_to_free = (pop::header*) (user_pointer - sizeof(pop::header));
 
 	// check the magic number and the allocator id at the same time
-	if(header_to_free->magic_allocator_id != basicAllocatorMagicValue)
+	if(header_to_free->magic_allocator_id != a_allocator.magic_value)
 	{
 		cerr << "PopEngine Error: invalid header at address " << header_to_free << " user_pointer " << (void*) user_pointer << " magic_allocator_id is " << header_to_free->magic_allocator_id << " size is " << header_to_free->size << endl;
 		return; 
 	}
-	header_to_free->magic_allocator_id = 0;
+	header_to_free->magic_allocator_id = pop::allocator::free_memory_magic_value;
 
 	// remove header from used memory
-	header* previous = header_to_free->previous;
-	header* next = header_to_free->next;
+	pop::header* previous = header_to_free->previous;
+	pop::header* next = header_to_free->next;
 
 	if(previous != NULL)
 	{
@@ -200,9 +247,9 @@ void basicFree (char* user_pointer)
 		next->previous = previous;
 	}
 
-	if(header_to_free == used_memory)
+	if(header_to_free == a_allocator.used_memory)
 	{
-		used_memory = next;
+		a_allocator.used_memory = next;
 	}
 
 	// add the pointer to free memory
@@ -212,20 +259,20 @@ void basicFree (char* user_pointer)
 	if(header_to_free->padding > 0)
 	{
 		int header_to_free_size = header_to_free->size;
-		header* header_to_free_next = header_to_free->next;
+		pop::header* header_to_free_next = header_to_free->next;
 		int header_to_free_padding = header_to_free->padding;
 
-		header_to_free = (header*)((char*) header_to_free - header_to_free->padding);
+		header_to_free = (pop::header*)((char*) header_to_free - header_to_free->padding);
 
 		header_to_free->size = header_to_free_size + header_to_free_padding;
 		header_to_free->next = header_to_free_next;
 		header_to_free->padding = 0;
-		header_to_free->magic_allocator_id = 0;
+		header_to_free->magic_allocator_id = pop::allocator::free_memory_magic_value;
 	}
 
 	// look for merges
-	header* mergeable_memory = NULL;
-	header* mergeable_memory_next = free_memory;
+	pop::header* mergeable_memory = NULL;
+	pop::header* mergeable_memory_next = a_allocator.free_memory;
 
 	// look for a place to put memory
 	bool is_merged_after_memory = false;
@@ -235,13 +282,13 @@ void basicFree (char* user_pointer)
 	while((mergeable_memory != NULL || mergeable_memory_next != NULL) && !is_merged_after_memory && !is_merged_before_memory && !is_tidied)
 	{
 		// look for a merge after
-		if(mergeable_memory != NULL && (char*) mergeable_memory + mergeable_memory->size + sizeof(header) == (char*) header_to_free - header_to_free->padding)
+		if(mergeable_memory != NULL && (char*) mergeable_memory + mergeable_memory->size + sizeof(pop::header) == (char*) header_to_free - header_to_free->padding)
 		{
-			cout << "                Merged after Memory : " << (void*) mergeable_memory << " --> " << (void*) ((char*) mergeable_memory + sizeof(header) + mergeable_memory->size) << " FUSION "; 
+			cout << "                Merged after Memory : " << (void*) mergeable_memory << " --> " << (void*) ((char*) mergeable_memory + sizeof(pop::header) + mergeable_memory->size) << " FUSION "; 
 			cout << (void*) ((char*)header_to_free - header_to_free->padding) << " <-- To Free : " << (void*) header_to_free << endl;
 
 			// add memory after potential mergeable memory
-			mergeable_memory->size += header_to_free->size + sizeof(header) + header_to_free->padding;
+			mergeable_memory->size += header_to_free->size + sizeof(pop::header) + header_to_free->padding;
 			is_merged_after_memory = true;
 
 			header_to_free = mergeable_memory;
@@ -249,13 +296,13 @@ void basicFree (char* user_pointer)
 
 		// look for a merge before next
 		if(mergeable_memory_next != NULL 
-				&& (char*) mergeable_memory_next == (char*) header_to_free + header_to_free->size + sizeof(header))
+				&& (char*) mergeable_memory_next == (char*) header_to_free + header_to_free->size + sizeof(pop::header))
 		{
-			cout << "                Merge after Header : " << (void*) header_to_free << " --> " << (void*) ((char*) header_to_free + header_to_free->size + sizeof(header)) << " FUSION "; 
+			cout << "                Merge after Header : " << (void*) header_to_free << " --> " << (void*) ((char*) header_to_free + header_to_free->size + sizeof(pop::header)) << " FUSION "; 
 			cout << (void*) mergeable_memory_next << " (Memory) " << endl;
 
-			header* mergeable_memory_next_next = mergeable_memory_next->next;
-			header_to_free->size += mergeable_memory_next->size + sizeof(header);
+			pop::header* mergeable_memory_next_next = mergeable_memory_next->next;
+			header_to_free->size += mergeable_memory_next->size + sizeof(pop::header);
 			header_to_free->next = mergeable_memory_next_next;
 
 			if(!is_merged_after_memory)
@@ -265,7 +312,7 @@ void basicFree (char* user_pointer)
 
 			if(mergeable_memory == NULL)
 			{
-				free_memory = header_to_free;
+				a_allocator.free_memory = header_to_free;
 			}
 
 			is_merged_before_memory = true;
@@ -294,7 +341,7 @@ void basicFree (char* user_pointer)
 
 					if(mergeable_memory == NULL)
 					{
-						free_memory = header_to_free;
+						a_allocator.free_memory = header_to_free;
 					}
 				}
 
@@ -317,132 +364,52 @@ void basicFree (char* user_pointer)
 
 int main( int argc, char *argv[] )
 {
-	memory_size = 256 * sizeof(char);
+	pop::allocator basic_allocator(256, 0xBA51CA110C, 8);
 
-	if(memory_size < (int) sizeof(header))
-	{
-		cerr << "PopEngine Error: not enough memory to create a header" << endl;
-		return 1;
-	}
+	readMemoryList(basic_allocator.used_memory, "Used Memory");
+	readMemoryList(basic_allocator.free_memory, "Free Memory");
 
-	cout << "PopEngine Info: memory size " << memory_size << endl;
-	cout << "PopEngine Info: header size " << sizeof(header) << endl;
-	memory = (char*) malloc(memory_size);
-
-	// initialize free_memory
-	free_memory = (header*) memory;
-	free_memory->size = memory_size - sizeof(header);
-	free_memory->magic_allocator_id = 0;
-	free_memory->padding = 0;
-	free_memory->next = NULL;
-	free_memory->previous = NULL;
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	char* memory_a = basicAllocate(6);
+	char* memory_a = basicAllocate(6, basic_allocator);
 	if(memory_a != NULL)
 		writeData(memory_a, 'a');
 
-	char* memory_b = basicAllocate(2);
+	char* memory_b = basicAllocate(2, basic_allocator);
 	if(memory_b != NULL)
 		writeData(memory_b, 'b');
 
-	char* memory_c = basicAllocate(1);
+	char* memory_c = basicAllocate(1, basic_allocator);
 	if(memory_c != NULL)
 		writeData(memory_c, 'c');
 
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
+	readMemoryList(basic_allocator.used_memory, "Used Memory");
+	readMemoryList(basic_allocator.free_memory, "Free Memory");
 
 	if(memory_c != NULL)
 	{
-		basicFree(memory_c);
+		basicFree(memory_c, basic_allocator);
 		memory_c = NULL;
 	}
 
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
+	readMemoryList(basic_allocator.used_memory, "Used Memory");
+	readMemoryList(basic_allocator.free_memory, "Free Memory");
 
 	if(memory_a != NULL)
 	{
-		basicFree(memory_a);
+		basicFree(memory_a, basic_allocator);
 		memory_a = NULL;
 	}
 
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
+	readMemoryList(basic_allocator.used_memory, "Used Memory");
+	readMemoryList(basic_allocator.free_memory, "Free Memory");
 
 	if(memory_b != NULL)
 	{
-		basicFree(memory_b);
+		basicFree(memory_b, basic_allocator);
 		memory_b = NULL;
 	}
 
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	/*char* memory_a = basicAllocate(6);
-	if(memory_a != NULL)
-		writeData(memory_a, 6, 'a');
-
-	char* memory_b = basicAllocate(2);
-	if(memory_b != NULL)
-		writeData(memory_b, 2, 'b');
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	char* memory_c = basicAllocate(190);
-	if(memory_c != NULL)
-		writeData(memory_c, 190, 'c');
-
-	char* memory_d = basicAllocate(40);
-	if(memory_d != NULL)
-		writeData(memory_d, 40, 'd');
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	if(memory_d != NULL)
-	{
-		basicFree(memory_d);
-		memory_d = NULL;
-	}
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	char* memory_e = basicAllocate(12);
-	if(memory_e != NULL)
-		writeData(memory_e, 12, 'e');
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	char* memory_f = basicAllocate(3);
-	if(memory_f != NULL)
-		writeData(memory_f, 3, 'f');
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	if(memory_a != NULL)
-	{
-		basicFree(memory_a);
-		memory_a = NULL;
-	}
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");
-
-	char* memory_g = basicAllocate(109);
-	if(memory_g != NULL)
-		writeData(memory_g, 109, 'g');
-
-	readMemoryList(used_memory, "Used Memory");
-	readMemoryList(free_memory, "Free Memory");*/
-
-	free(memory);	
+	readMemoryList(basic_allocator.used_memory, "Used Memory");
+	readMemoryList(basic_allocator.free_memory, "Free Memory");
+	
 	return 0;
 }
