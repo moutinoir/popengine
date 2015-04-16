@@ -12,8 +12,6 @@ namespace pop
 		long magic_allocator_id;
 		header* next;
 		header* previous;
-		//header* global_next;
-		//header* global_previous;
 		int padding;
 	};
 
@@ -23,7 +21,6 @@ namespace pop
 		int memory_size;
 		long magic_value;
 		int word_size;
-		//int block_size = 8;
 		header* free_memory;
 		header* used_memory;
 
@@ -109,14 +106,6 @@ void readMemoryList (pop::header* a_memory_list, string a_memory_list_name)
 char* basicAllocate (int a_requested_size, pop::allocator& a_allocator)
 {
 	cout << "PopEngine Info: Allocate  " << a_requested_size;
-	// check if requested_size is a multiple of the block size
-	/*int remainder = a_requested_size % block_size;
-	int quotient = a_requested_size / block_size;
-
-	if(remainder != 0)
-	{
-		a_requested_size = (quotient + 1) * block_size;
-	}*/
 
 	// allocate enough memory for the data, the header, and a margin to align the user pointer
 	int allocate_size = a_requested_size + sizeof(pop::header) + a_allocator.word_size;
